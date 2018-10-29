@@ -1,0 +1,205 @@
+---
+title: "My Bechdel test"
+author: "Benjamin Mai"
+date: "1 octobre 2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+##Report
+
+##1) Package used
+
+```{r}
+library(readr)
+library(dplyr)
+library(ggplot2)
+library(tidyr)
+```
+
+
+##2) Presentation of the Data
+
+The data were collected from a study on gender bias in movies. This study aimed at comparing the number of words said by females in movies compared to the number of words said by men. these data contain information on about 2000 movies from 1929 to 2015.
+
+The file "character_list5.csv" contains information on the number of words, gender and age for each character's name from a script_id (each film is associated with a unique script id). It is important to notive that only characters saying more than 100 words in a movie were included in the original database. For the rest of this report, it will be assumed that for each movie, the characters included in this database represent all the characters present of this movie. 
+
+The file "meta_data7.csv" contains information on the script_id, imdb_id, title, year and gross profit of each of the about 2000 movies from the database. 
+
+All the data can be accessed in the file named "scripts-graphs". They were fetched as below: 
+
+```{r}
+
+characters <- read_csv("scripts-graphs/character_list5.csv")
+
+mapping <- read_csv("scripts-graphs/character_mapping.csv")
+mapping
+
+movies <- read_csv("scripts-graphs/meta_data7.csv")
+movies
+```
+
+
+All the analysis in this report will be performed on the 50 movies from 2014 that generated the highest gross profit. 2015 was not chosen because the database for this year is not complete enough. Then, the year 2014 is the most recent year from the database that is sufficiently complete for a precise enough analyse. 
+
+Since the data are not entirely complete, it is important to underline that the 50 movies with the highest gross profit from this database are not exactly the actual 50 movies with the highest gross profit of 2014. 
+
+
+##2) Elaboration of my Beschdel test
+
+The first exploration of my Beschdel test aims at identifying the proportion of the total number of words said by women relative to the total number of words said by men in the 50 highest gross movies of 2014 (according to the database). 
+
+In particurlar, my test specifies that a movie passes my first criterion if more than 40% of the total number of words in a movie are said by women. 40% was chosen because I considered that a proportion below this benchmark would be sufficiently significant to consider that there is a true difference between the number of words said by men and women in the movie. Instead, if the proportion of total number of words said by women is between 40% and 50%, although this implies a gap, such difference cannot be considered significant enough to make a movie not pass the test. 
+
+To apply this first criterion, I first computed "main_table" that joins the main 2 data files to obtain a table with all the information needed on actors (gender and age) for each of the 50 highest gross movies of 2014. Most of the data manipulation were then performed from this table. 
+
+Then after data manipulation of main_table, I computed "female_nb_words" which show in columns "f" and "m" the total number of words said by females and males in movies. I finally added a column criterion_1 to this table that takes value 1 when the criterion developed above is satisfied, and takes value 0 otherwise. 
+
+On a side note, it can be noticed that both the films Fury and Foxcatcher do not have any females included in the database, meaning that no females in the these movies say more than a 100 words. 
+
+```{r}
+#main_table contains information on the name of actors, their gender and their age from the 50 films that made the highest gross profit in 2014
+main_table <- movies %>% 
+  filter(year == 2014) %>% 
+  top_n(50, gross) %>% 
+  arrange(desc(gross)) %>% 
+  select(title, gross, script_id) %>% 
+  inner_join(characters, by = "script_id")
+
+#female_nb_words show the total number of words said by women and by men in the 50 highest gross films of 2014
+female_nb_words <- main_table %>% 
+  group_by(title, gender) %>% 
+  summarise(total = sum(words)) %>% 
+  spread(key = gender, value = total)
+
+#Both the films foxcatcher and fury don't have any females saying more than 100 words, therefore the NA's in the column "f" for both of these films are replaced by a 0
+female_nb_words[is.na(female_nb_words)] <- 0
+
+#A proportion of 40% was chosen for a movie to meet the first criterion of my beschdel test
+prop <- 0.40
+
+#create a column for criterion_1 whith value 1 or 0. It takes value 1 when sum of the words said by all the women in a movie is nos less than 40% of the total number of words in the movie. Else, it takes value 0
+female_nb_words <- female_nb_words %>% 
+  mutate(criterion_1 = case_when(
+    f > prop*(m + f) ~ 1, 
+    f < prop*(m + f) ~ 0)
+    ) 
+
+female_nb_words
+```
+
+
+Only 12 out of the 50 films pass the first test.
+```{r}
+#12 films out of the 50 pass the first criterion of my Beschel test
+sum(female_nb_words$criterion_1)
+```
+
+
+Grqph for first criterion
+```{r}
+
+graph_1 <- main_table %>% 
+  group_by(title, gender) %>% 
+  summarise(total = sum(words))
+
+gender <- rep(c("m", "f"), 50)
+gender <- as.data.frame(gender)
+gender
+total_movies <- main_table %>% distinct(title)
+total_movies <- total_movies %>% rbind(total_movies) %>% arrange(title)
+total_movies <- total_movies %>%  cbind(gender) 
+
+graph_1 <- graph_1 %>% 
+  right_join(total_movies, by = c("title", "gender")) 
+graph_1
+graph_1[is.na(graph_1)] <- 0
+graph_1
+
+graph_1 %>%
+  ggplot() +
+  aes(x = title, y = total, fill = gender) +
+  geom_col(position = "fill", width = 1) +
+  geom_hline(yintercept = 0.6, colour = "red") +
+  scale_fill_viridis_d() +
+  labs(title = "Total") +
+  theme_minimal()
+
+```
+
+Stuff not working yet
+```{r}
+index <- seq(1, 50, 1)
+index <- as.data.frame(index)
+index <- index %>% rbind(index)
+index
+
+graph_1 %>% cbind(index)
+```
+
+
+The second exploration of my test. 
+```{r}
+
+total_w_p_movies <- main_table %>% 
+  group_by(title) %>% 
+  summarise(total_w = sum(words))
+
+female_age_cat <- main_table %>% 
+  filter(gender == "f") %>% 
+  mutate(age = as.integer(age)) %>% 
+  mutate(age_category = case_when(age < 31 ~ "young",
+                              age >= 31 & age < 45 ~ "medium",
+                              age >= 45 ~ "senior",
+                              is.na(age) ~ "unknown")) %>% 
+  group_by(title, age_category) %>% 
+  summarise(count = n())
+female_age_cat  
+
+#foxcatcher, fury
+
+age_category <- rep(c("young", "medium", "senior", "unknown"), 50)
+age_category <- as.data.frame(age_category)
+movies_2014 <- main_table %>% distinct(title)
+movies_2014 <- movies_2014 %>% rbind(movies_2014)
+movies_2014 <- movies_2014 %>% rbind(movies_2014)
+movies_2014 <-  movies_2014 %>% arrange(title)
+movies_2014 <- movies_2014 %>% cbind(age_category)
+
+
+female_age_cat <- female_age_cat %>% 
+  right_join(movies_2014, by = c("title", "age_category")) %>% 
+  spread(key = age_category, value = count)
+
+female_age_cat[is.na(female_age_cat)] <- 0
+
+female_age_cat <- female_age_cat %>% 
+  mutate(criterion_2 = case_when(young >= 1 & medium >= 1 & senior >= 1 ~ 1, 
+                          !(young >= 1 & medium >= 1 & senior >= 1) ~ 0))
+
+
+```
+
+
+Weakness from the data and weakness in the approach:
+In the data: Not extremely accurate, only characters with more than 100 words given, a lot of missing data with the NULL in the age, not exactly the 50 highest gross movies, data were taken from screenplay so issues with that
+in the approach: not because small for women that it will not be for men in the second criterion 9 vs 16
+
+strength: number of words is quite talking. The result seems quite signigicant. Approach takes into account 2 important aspects of gender bias with both the strenght of women presence relative to men and the age bias. 
+
+```{r}
+#combination of both tables
+
+test_table <- female_age_cat %>% 
+  inner_join(female_nb_words, by = "title") %>% 
+  select(criterion_1, criterion_2) %>% 
+  mutate(final_test = case_when(criterion_1 == 1 & criterion_2 == 1 ~ 1,
+                                !(criterion_1 == 1 & criterion_2 == 1) ~ 0))
+
+sum(test_table$final_test)
+
+```
+
